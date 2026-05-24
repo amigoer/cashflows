@@ -1,0 +1,57 @@
+name: CashFlows
+options:
+  bundleIdPrefix: com.amigoer
+  deploymentTarget:
+    iOS: "26.0"
+  developmentLanguage: zh-Hans
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+    DEAD_CODE_STRIPPING: "YES"
+    CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED: "YES"
+    LOCALIZATION_PREFERS_STRING_CATALOGS: "YES"
+
+targets:
+  CashFlows:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: CashFlows
+        excludes:
+          - "**/.DS_Store"
+    info:
+      path: CashFlows/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: 现金流
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiredDeviceCapabilities:
+          - arm64
+        NSPhotoLibraryUsageDescription: "选择分期账单截图，自动识别金额、期数等信息。所有数据只保存在你的设备本地。"
+        NSCameraUsageDescription: "拍摄分期账单进行识别。所有数据只保存在你的设备本地。"
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: CashFlows/Resources/CashFlows.entitlements
+      properties: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.amigoer.cashflows
+        GENERATE_INFOPLIST_FILE: "NO"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1"
+        ENABLE_PREVIEWS: "YES"
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"

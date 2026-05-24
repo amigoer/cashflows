@@ -1,45 +1,37 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# macOS
+.DS_Store
 
-# Dependencies
-node_modules/
+# Xcode build artifacts
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+project.xcworkspace/xcuserdata/
 
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
+# Generated project file (regenerate via `xcodegen generate`)
+*.xcodeproj/
 
-# Generated native folders
-/ios
-/android
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+.packages/
+Packages/
 
-# Native build artifacts
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-*.pem
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
 
-# Metro
-.metro-health-check*
-
-# Logs
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-pnpm-debug.*
-*.log
-
-# Environment
-.env
-.env.*
-!.env.example
-
-# TypeScript
-*.tsbuildinfo
+# CocoaPods (not used, but ignore in case)
+Pods/
 
 # Editor / IDE
 .vscode/
@@ -47,9 +39,6 @@ pnpm-debug.*
 *.iml
 *.swp
 *.swo
-
-# macOS
-.DS_Store
 
 # AI assistant artifacts
 .claude/
@@ -63,3 +52,11 @@ CLAUDE.md
 GEMINI.md
 COPILOT.md
 .github/copilot-instructions.md
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
