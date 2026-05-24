@@ -3,17 +3,23 @@ import SwiftUI
 
 struct ImportScreenshotFlow: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var config = LLMConfig.shared
+
+    @State private var platformChoice: PlatformChoice = .huabei
+    @State private var customPlatform: String = ""
 
     @State private var photoItem: PhotosPickerItem?
     @State private var isProcessing = false
     @State private var error: String?
     @State private var draft: DebtPlanDraft?
+    @State private var draftSource: LLMBillParser.Source = .regex
 
     var body: some View {
         NavigationStack {
             Group {
                 if let draft {
                     DebtFormView(draft: draft)
+                        .safeAreaInset(edge: .top) { sourceBanner }
                 } else {
                     pickerStage
                         .navigationTitle("从截图识别")
@@ -28,54 +34,84 @@ struct ImportScreenshotFlow: View {
         }
     }
 
+    // MARK: - Source banner shown above the prefilled form
+
+    @ViewBuilder
+    private var sourceBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: draftSource == .llm ? "sparkles" : "doc.text.viewfinder")
+            Text(draftSource == .llm ? "LLM 已识别，请核对" : "本地解析已识别，请核对")
+                .font(.footnote.weight(.medium))
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background((draftSource == .llm ? Color.accentColor : Color.secondary).opacity(0.12))
+        .foregroundStyle(draftSource == .llm ? Color.accentColor : Color.secondary)
+    }
+
+    // MARK: - Stage 1: pick platform + photo
+
     @ViewBuilder
     private var pickerStage: some View {
-        VStack(spacing: 24) {
-            Spacer()
+        Form {
+            Section("分期平台") {
+                Picker("平台", selection: $platformChoice) {
+                    ForEach(PlatformChoice.allCases) { choice in
+                        Text(choice.label).tag(choice)
+                    }
+                }
+                .pickerStyle(.menu)
 
-            Image(systemName: "doc.text.viewfinder")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
-
-            VStack(spacing: 6) {
-                Text("上传分期账单截图")
-                    .font(.title3.bold())
-                Text("自动识别平台、本金、期数、月供、首期还款日。所有识别都在你的手机本地进行。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                if platformChoice == .other {
+                    TextField("自定义平台名（如 微粒贷）", text: $customPlatform)
+                        .textInputAutocapitalization(.never)
+                }
             }
 
-            if isProcessing {
-                ProgressView("识别中…").padding(.top, 8)
+            Section {
+                PhotosPicker(selection: $photoItem, matching: .images, photoLibrary: .shared()) {
+                    HStack {
+                        Image(systemName: "photo.on.rectangle.angled")
+                        Text(isProcessing ? "识别中…" : "从相册选择截图")
+                        Spacer()
+                    }
+                }
+                .disabled(isProcessing || resolvedPlatform.isEmpty)
+
+                if isProcessing {
+                    HStack {
+                        ProgressView()
+                        Text(config.isReady ? "正在调用 LLM 抽取字段…" : "正在本地解析…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("上传账单截图")
+            } footer: {
+                if config.isReady {
+                    Text("已启用 LLM 增强识别（模型：\(config.model)）。OCR 文本会发到你配置的接口。")
+                } else {
+                    Text("未启用 LLM 识别，使用本地正则解析（准确度较低）。可在「设置 → LLM 增强识别」配置。")
+                }
             }
 
             if let error {
-                Text(error)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.pink)
+                        .font(.callout)
+                }
             }
-
-            PhotosPicker(selection: $photoItem, matching: .images, photoLibrary: .shared()) {
-                Label(isProcessing ? "识别中" : "从相册选择截图", systemImage: "photo")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(isProcessing)
-            .padding(.horizontal, 24)
-
-            Spacer()
         }
         .onChange(of: photoItem) { _, newItem in
             guard let newItem else { return }
             Task { await process(item: newItem) }
         }
     }
+
+    // MARK: - Processing pipeline
 
     private func process(item: PhotosPickerItem) async {
         isProcessing = true
@@ -84,8 +120,7 @@ struct ImportScreenshotFlow: View {
 
         do {
             guard let data = try await item.loadTransferable(type: Data.self),
-                  let image = UIImage(data: data)
-            else {
+                  let image = UIImage(data: data) else {
                 error = "无法读取这张图片，换一张试试"
                 return
             }
@@ -94,11 +129,43 @@ struct ImportScreenshotFlow: View {
                 error = "没识别到任何文字，请换一张更清晰的截图"
                 return
             }
-            draft = BillParser.parse(observations: observations)
+            let (parsed, source) = await LLMBillParser.parse(
+                observations: observations,
+                platform: resolvedPlatform,
+                config: config
+            )
+            draftSource = source
+            draft = parsed
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
+
+    private var resolvedPlatform: String {
+        switch platformChoice {
+        case .other: customPlatform.trimmingCharacters(in: .whitespaces)
+        default: platformChoice.label
+        }
+    }
+}
+
+/// Common Chinese installment platforms surfaced in the picker.
+enum PlatformChoice: String, CaseIterable, Identifiable {
+    case huabei = "花呗"
+    case jiebei = "借呗"
+    case jdBaitiao = "京东白条"
+    case jdJintiao = "京东金条"
+    case zhaoshangCard = "招商银行信用卡"
+    case jianshangCard = "建设银行信用卡"
+    case gongshangCard = "工商银行信用卡"
+    case nongshangCard = "农业银行信用卡"
+    case zhongguoCard = "中国银行信用卡"
+    case jiaotongCard = "交通银行信用卡"
+    case meituanYuefu = "美团月付"
+    case other = "其他"
+
+    var id: String { rawValue }
+    var label: String { rawValue }
 }
 
 #Preview {

@@ -63,6 +63,20 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Color.clear)
 
+                Section("识别") {
+                    NavigationLink {
+                        LLMSettingsView(config: LLMConfig.shared)
+                    } label: {
+                        SettingsRow(
+                            systemImage: "sparkles",
+                            title: "LLM 增强识别",
+                            subtitle: LLMConfig.shared.isReady
+                                ? "已配置 · \(LLMConfig.shared.model)"
+                                : "用自己的 API Key 让识别更准"
+                        )
+                    }
+                }
+
                 Section("关于") {
                     HStack {
                         Text("现金流")
