@@ -12,23 +12,45 @@ enum MockData {
 
         let cal = Calendar.current
 
-        // ───── Salaries: 18 monthly entries starting May 2026 ─────
+        // ───── Salaries: 18 monthly entries starting May 2026, with realistic deductions ─────
         let salaryStart = cal.date(from: DateComponents(year: 2026, month: 5, day: 5))!
         for offset in 0..<18 {
             guard let date = cal.date(byAdding: .month, value: offset, to: salaryStart) else { continue }
             let month = cal.component(.month, from: date)
-            let amount: Int
+
+            // Deductions roughly tracking real-life China payroll for a ~15K gross.
+            let baseGross: Int
+            let baseSocial: Int
+            let baseFund: Int
+            let baseTax: Int
+            let baseExtra: Int  // 专项附加（房租 + 赡养老人 等）
             let note: String?
             switch month {
-            case 12: amount = 18_000_00; note = "月薪 + 年终奖"
-            case 7:  amount = 15_000_00; note = "月薪 + 半年奖"
-            default: amount = 10_000_00; note = nil
+            case 12:
+                baseGross = 27_000_00; baseSocial = 2_700_00; baseFund = 3_240_00
+                baseTax = 1_800_00; baseExtra = 1_200_00
+                note = "月薪 + 年终奖"
+            case 7:
+                baseGross = 22_500_00; baseSocial = 2_250_00; baseFund = 2_700_00
+                baseTax = 1_300_00; baseExtra = 1_200_00
+                note = "月薪 + 半年奖"
+            default:
+                baseGross = 15_000_00; baseSocial = 1_500_00; baseFund = 1_800_00
+                baseTax = 500_00; baseExtra = 1_200_00
+                note = nil
             }
+            let net = baseGross - baseSocial - baseFund - baseTax - baseExtra
             context.insert(Salary(
-                amountCents: amount,
+                amountCents: net,
                 paidAt: date,
                 period: .monthly,
-                note: note
+                note: note,
+                grossAmountCents: baseGross,
+                socialInsuranceCents: baseSocial,
+                housingFundCents: baseFund,
+                incomeTaxCents: baseTax,
+                additionalDeductionCents: baseExtra,
+                otherDeductionCents: 0
             ))
         }
 

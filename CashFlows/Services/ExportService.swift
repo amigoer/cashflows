@@ -19,6 +19,13 @@ struct SalaryDTO: Codable, Identifiable {
     var period: String
     var note: String?
     var createdAt: Date
+    // v2+ optional breakdown
+    var grossAmountCents: Int?
+    var socialInsuranceCents: Int?
+    var housingFundCents: Int?
+    var incomeTaxCents: Int?
+    var additionalDeductionCents: Int?
+    var otherDeductionCents: Int?
 }
 
 struct DebtPlanDTO: Codable, Identifiable {
@@ -70,7 +77,13 @@ enum ExportService {
                 paidAt: $0.paidAt,
                 period: $0.period.rawValue,
                 note: $0.note,
-                createdAt: $0.createdAt
+                createdAt: $0.createdAt,
+                grossAmountCents: $0.grossAmountCents > 0 ? $0.grossAmountCents : nil,
+                socialInsuranceCents: $0.socialInsuranceCents > 0 ? $0.socialInsuranceCents : nil,
+                housingFundCents: $0.housingFundCents > 0 ? $0.housingFundCents : nil,
+                incomeTaxCents: $0.incomeTaxCents > 0 ? $0.incomeTaxCents : nil,
+                additionalDeductionCents: $0.additionalDeductionCents > 0 ? $0.additionalDeductionCents : nil,
+                otherDeductionCents: $0.otherDeductionCents > 0 ? $0.otherDeductionCents : nil
             )
         }
 
@@ -238,7 +251,13 @@ enum ExportService {
                 paidAt: s.paidAt,
                 period: period,
                 note: s.note,
-                createdAt: s.createdAt
+                createdAt: s.createdAt,
+                grossAmountCents: s.grossAmountCents ?? 0,
+                socialInsuranceCents: s.socialInsuranceCents ?? 0,
+                housingFundCents: s.housingFundCents ?? 0,
+                incomeTaxCents: s.incomeTaxCents ?? 0,
+                additionalDeductionCents: s.additionalDeductionCents ?? 0,
+                otherDeductionCents: s.otherDeductionCents ?? 0
             )
             context.insert(model)
         }
