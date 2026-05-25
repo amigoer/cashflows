@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var showImportPicker = false
     @State private var importConfirm: URL?
     @State private var feedback: Feedback?
+    @State private var showMockConfirm = false
+    @State private var showWipeConfirm = false
 
     private struct ExportItem: Identifiable {
         let id = UUID()
@@ -84,6 +86,28 @@ struct SettingsView: View {
                         Text("v" + appVersion).foregroundStyle(.secondary)
                     }
                 }
+
+                Section("调试") {
+                    Button {
+                        showMockConfirm = true
+                    } label: {
+                        SettingsRow(
+                            systemImage: "wand.and.stars",
+                            title: "重置为示例数据",
+                            subtitle: "清空当前数据，插入 2026-05 起 18 个月的样本"
+                        )
+                    }
+                    Button(role: .destructive) {
+                        showWipeConfirm = true
+                    } label: {
+                        SettingsRow(
+                            systemImage: "trash",
+                            title: "清空所有数据",
+                            subtitle: "无法恢复",
+                            tint: .pink
+                        )
+                    }
+                }
             }
             .navigationTitle("设置")
             .sheet(item: $exportSheet) { item in
@@ -118,6 +142,36 @@ struct SettingsView: View {
             }
             .alert(item: $feedback) { f in
                 Alert(title: Text(f.title), message: Text(f.message), dismissButton: .default(Text("好")))
+            }
+            .confirmationDialog(
+                "重置并插入示例数据？现有所有数据会被清空。",
+                isPresented: $showMockConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("重置并插入", role: .destructive) {
+                    do {
+                        try MockData.resetWithSamples(in: modelContext)
+                        feedback = Feedback(title: "已插入示例数据", message: "包含 18 个月工资 + 7 个分期/固定支出")
+                    } catch {
+                        feedback = Feedback(title: "插入失败", message: error.localizedDescription)
+                    }
+                }
+                Button("取消", role: .cancel) { }
+            }
+            .confirmationDialog(
+                "清空所有数据？此操作无法撤销。",
+                isPresented: $showWipeConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("清空", role: .destructive) {
+                    do {
+                        try MockData.wipeAll(in: modelContext)
+                        feedback = Feedback(title: "已清空", message: "所有数据已删除")
+                    } catch {
+                        feedback = Feedback(title: "清空失败", message: error.localizedDescription)
+                    }
+                }
+                Button("取消", role: .cancel) { }
             }
         }
     }

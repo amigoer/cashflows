@@ -9,8 +9,8 @@ struct RootView: View {
             Tab("工资", systemImage: "banknote") {
                 SalaryListView()
             }
-            Tab("债务", systemImage: "creditcard") {
-                DebtListView()
+            Tab("支出", systemImage: "creditcard") {
+                OutflowsTabView()
             }
             Tab("日历", systemImage: "calendar") {
                 CalendarScreen()

@@ -2,162 +2,96 @@ import SwiftData
 import SwiftUI
 
 struct DashboardView: View {
-    @State private var reference: Date = .now
-
     @Query(sort: \Salary.paidAt) private var salaries: [Salary]
     @Query(sort: \Repayment.dueDate) private var repayments: [Repayment]
-    @Query(
-        filter: #Predicate<DebtPlan> { !$0.archived },
-        sort: \DebtPlan.platform
-    )
-    private var debtPlans: [DebtPlan]
+    @Query private var debtPlans: [DebtPlan]
+    @Query private var recurringExpenses: [RecurringExpense]
 
-    private var monthInterval: DateInterval {
-        Calendar.current.dateInterval(of: .month, for: reference) ?? DateInterval(start: reference, duration: 0)
+    @State private var showDebtsBreakdown = false
+
+    private var months: [MonthSummary] {
+        MonthlyTimelineBuilder.build(
+            salaries: salaries,
+            repayments: repayments,
+            recurringExpenses: recurringExpenses
+        )
     }
 
-    private var monthSalaries: [Salary] {
-        salaries.filter { monthInterval.contains($0.paidAt) }
+    private var overview: DebtOverview {
+        DebtOverviewBuilder.build(
+            salaries: salaries,
+            repayments: repayments,
+            debtPlans: debtPlans,
+            recurringExpenses: recurringExpenses
+        )
     }
 
-    private var monthRepayments: [Repayment] {
-        repayments.filter { monthInterval.contains($0.dueDate) }
-    }
-
-    private var incomeCents: Int { monthSalaries.reduce(0) { $0 + $1.amountCents } }
-    private var repaymentCents: Int { monthRepayments.reduce(0) { $0 + $1.amountCents } }
-    private var netCents: Int { incomeCents - repaymentCents }
-
-    private var hasAnyData: Bool {
-        !monthSalaries.isEmpty || !monthRepayments.isEmpty || !debtPlans.isEmpty
+    private var isEmpty: Bool {
+        overview.isEmpty
+            && months.allSatisfy { $0.incomeCents == 0 && $0.repaymentCents == 0 && $0.expenseCents == 0 }
     }
 
     var body: some View {
         NavigationStack {
             Group {
-                if hasAnyData {
-                    ScrollView {
-                        VStack(spacing: 16) {
-                            heroCard
-                            HStack(spacing: 12) {
-                                miniCard(label: "收入", cents: incomeCents, tone: .income)
-                                miniCard(label: "还款", cents: -repaymentCents, tone: .expense)
-                            }
-                            platformSection
-                        }
-                        .padding(16)
-                        .padding(.bottom, 40)
-                    }
-                } else {
+                if isEmpty {
                     EmptyState(
-                        title: "本月暂无数据",
-                        description: "在「工资」或「债务」标签页加入你的第一条记录。",
-                        systemImage: "chart.pie"
+                        title: "还没有现金流数据",
+                        description: "录入收入、债务分期或固定开销，时间线就会自动生成。",
+                        systemImage: "chart.bar.xaxis"
                     )
+                } else {
+                    timelineScroll
                 }
             }
             .navigationTitle("总览")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    MonthSwitcher(reference: $reference)
+            .navigationDestination(isPresented: $showDebtsBreakdown) {
+                DebtsBreakdownView()
+            }
+        }
+    }
+
+    private var timelineScroll: some View {
+        ScrollView {
+            LazyVStack(spacing: 16) {
+                OverviewHeader(overview: overview) {
+                    showDebtsBreakdown = true
                 }
-            }
-        }
-    }
+                .padding(.horizontal, 16)
 
-    private var heroCard: some View {
-        GlassCard(cornerRadius: 22) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("\(DateFormat.yearMonth(reference)) 净现金流")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                AmountText(
-                    cents: netCents,
-                    tone: netCents >= 0 ? .income : .expense,
-                    size: .hero,
-                    signed: true
-                )
-                Text("\(monthSalaries.count) 笔工资  ·  \(monthRepayments.count) 笔还款")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
+                sectionHeader
 
-    private func miniCard(label: String, cents: Int, tone: AmountText.Tone) -> some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(label).font(.caption).foregroundStyle(.secondary)
-                AmountText(cents: cents, tone: tone, size: .large)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    @ViewBuilder
-    private var platformSection: some View {
-        if !debtPlans.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("平台债务")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Spacer()
-                    AmountText(cents: totalRemainingCents, tone: .expense, size: .medium)
-                }
-                .padding(.horizontal, 4)
-
-                GlassCard(padding: 0, cornerRadius: 18) {
-                    VStack(spacing: 0) {
-                        ForEach(Array(debtPlans.enumerated()), id: \.element.id) { idx, plan in
-                            NavigationLink {
-                                DebtDetailView(plan: plan)
-                            } label: {
-                                platformRow(plan: plan)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            if idx < debtPlans.count - 1 {
-                                Divider().padding(.leading, 16)
-                            }
-                        }
+                ForEach(months) { summary in
+                    NavigationLink {
+                        MonthDetailView(summary: summary)
+                    } label: {
+                        MonthCard(summary: summary)
                     }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
                 }
+
+                Spacer(minLength: 32)
             }
+            .padding(.top, 4)
         }
+        .background(Color(.systemGroupedBackground))
     }
 
-    private func platformRow(plan: DebtPlan) -> some View {
-        let paid = plan.repayments.lazy.filter { $0.status == .paid }.count
-        let remaining = plan.repayments.lazy.filter { $0.status != .paid }.reduce(0) { $0 + $1.amountCents }
-        return HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(plan.platform)
-                Text("\(paid)/\(plan.totalPeriods) 期已还")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+    private var sectionHeader: some View {
+        HStack {
+            Text("月度时间线")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
             Spacer()
-            AmountText(cents: remaining, tone: .neutral, size: .medium)
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
-    }
-
-    private var totalRemainingCents: Int {
-        debtPlans.flatMap { $0.repayments }
-            .filter { $0.status != .paid }
-            .reduce(0) { $0 + $1.amountCents }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
     }
 }
 
 #Preview {
     DashboardView()
-        .modelContainer(for: [Salary.self, DebtPlan.self, Repayment.self], inMemory: true)
+        .modelContainer(for: [Salary.self, DebtPlan.self, Repayment.self, RecurringExpense.self], inMemory: true)
 }

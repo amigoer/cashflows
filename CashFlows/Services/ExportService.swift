@@ -2,13 +2,14 @@ import Foundation
 import SwiftData
 
 struct ExportPayload: Codable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version: Int
     var exportedAt: Date
     var salaries: [SalaryDTO]
     var debtPlans: [DebtPlanDTO]
     var repayments: [RepaymentDTO]
+    var recurringExpenses: [RecurringExpenseDTO]
 }
 
 struct SalaryDTO: Codable, Identifiable {
@@ -43,12 +44,24 @@ struct RepaymentDTO: Codable, Identifiable {
     var paidAt: Date?
 }
 
+struct RecurringExpenseDTO: Codable, Identifiable {
+    var id: UUID
+    var category: String
+    var amountCents: Int
+    var startMonth: Date
+    var endMonth: Date?
+    var note: String?
+    var archived: Bool
+    var createdAt: Date
+}
+
 @MainActor
 enum ExportService {
     static func collect(from context: ModelContext) throws -> ExportPayload {
         let salaries = try context.fetch(FetchDescriptor<Salary>())
         let debtPlans = try context.fetch(FetchDescriptor<DebtPlan>())
         let repayments = try context.fetch(FetchDescriptor<Repayment>())
+        let expenses = try context.fetch(FetchDescriptor<RecurringExpense>())
 
         let salaryDtos = salaries.map {
             SalaryDTO(
@@ -94,12 +107,26 @@ enum ExportService {
             )
         }
 
+        let expenseDtos = expenses.map {
+            RecurringExpenseDTO(
+                id: UUID(),
+                category: $0.category,
+                amountCents: $0.amountCents,
+                startMonth: $0.startMonth,
+                endMonth: $0.endMonth,
+                note: $0.note,
+                archived: $0.archived,
+                createdAt: $0.createdAt
+            )
+        }
+
         return ExportPayload(
             version: ExportPayload.currentVersion,
             exportedAt: .now,
             salaries: salaryDtos,
             debtPlans: planDtos,
-            repayments: repaymentDtos
+            repayments: repaymentDtos,
+            recurringExpenses: expenseDtos
         )
     }
 
@@ -118,16 +145,18 @@ enum ExportService {
 
     static func encodeCsv(_ payload: ExportPayload) -> String {
         var lines: [String] = []
+        let iso = ISO8601DateFormatter()
+
         lines.append("# salaries")
         lines.append("id,amount_cents,paid_at,period,note,created_at")
         for s in payload.salaries {
             lines.append([
                 s.id.uuidString,
                 String(s.amountCents),
-                ISO8601DateFormatter().string(from: s.paidAt),
+                iso.string(from: s.paidAt),
                 s.period,
                 csvEscape(s.note ?? ""),
-                ISO8601DateFormatter().string(from: s.createdAt),
+                iso.string(from: s.createdAt),
             ].joined(separator: ","))
         }
         lines.append("")
@@ -140,11 +169,11 @@ enum ExportService {
                 String(p.principalCents),
                 String(p.totalPeriods),
                 String(p.monthlyPaymentCents),
-                ISO8601DateFormatter().string(from: p.firstDueDate),
+                iso.string(from: p.firstDueDate),
                 String(p.aprBps),
                 csvEscape(p.note ?? ""),
                 p.archived ? "true" : "false",
-                ISO8601DateFormatter().string(from: p.createdAt),
+                iso.string(from: p.createdAt),
             ].joined(separator: ","))
         }
         lines.append("")
@@ -155,10 +184,25 @@ enum ExportService {
                 r.id.uuidString,
                 r.debtPlanId.uuidString,
                 String(r.periodIndex),
-                ISO8601DateFormatter().string(from: r.dueDate),
+                iso.string(from: r.dueDate),
                 String(r.amountCents),
                 r.status,
-                r.paidAt.map { ISO8601DateFormatter().string(from: $0) } ?? "",
+                r.paidAt.map { iso.string(from: $0) } ?? "",
+            ].joined(separator: ","))
+        }
+        lines.append("")
+        lines.append("# recurring_expenses")
+        lines.append("id,category,amount_cents,start_month,end_month,note,archived,created_at")
+        for e in payload.recurringExpenses {
+            lines.append([
+                e.id.uuidString,
+                csvEscape(e.category),
+                String(e.amountCents),
+                iso.string(from: e.startMonth),
+                e.endMonth.map { iso.string(from: $0) } ?? "",
+                csvEscape(e.note ?? ""),
+                e.archived ? "true" : "false",
+                iso.string(from: e.createdAt),
             ].joined(separator: ","))
         }
         return lines.joined(separator: "\n")
@@ -172,10 +216,20 @@ enum ExportService {
     }
 
     static func restore(from payload: ExportPayload, into context: ModelContext) throws {
-        // Replace existing data with imported payload (full overwrite).
-        try context.delete(model: Repayment.self)
-        try context.delete(model: DebtPlan.self)
-        try context.delete(model: Salary.self)
+        // Fetch + iterate so SwiftData walks cascade / nullify-inverse rules.
+        for r in try context.fetch(FetchDescriptor<Repayment>()) {
+            context.delete(r)
+        }
+        for p in try context.fetch(FetchDescriptor<DebtPlan>()) {
+            context.delete(p)
+        }
+        for s in try context.fetch(FetchDescriptor<Salary>()) {
+            context.delete(s)
+        }
+        for e in try context.fetch(FetchDescriptor<RecurringExpense>()) {
+            context.delete(e)
+        }
+        try context.save()
 
         for s in payload.salaries {
             let period = SalaryPeriod(rawValue: s.period) ?? .monthly
@@ -218,6 +272,18 @@ enum ExportService {
             )
             model.debtPlan = plan
             context.insert(model)
+        }
+
+        for e in payload.recurringExpenses {
+            context.insert(RecurringExpense(
+                category: e.category,
+                amountCents: e.amountCents,
+                startMonth: e.startMonth,
+                endMonth: e.endMonth,
+                note: e.note,
+                archived: e.archived,
+                createdAt: e.createdAt
+            ))
         }
 
         try context.save()
