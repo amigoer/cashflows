@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var feedback: Feedback?
     @State private var showMockConfirm = false
     @State private var showWipeConfirm = false
+    @State private var notificationConfig = NotificationConfig.shared
+    @State private var notificationDenied = false
 
     private struct ExportItem: Identifiable {
         let id = UUID()
@@ -64,6 +66,28 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 .listRowBackground(Color.clear)
+
+                Section {
+                    Toggle("还款提醒", isOn: $notificationConfig.repaymentRemindersEnabled)
+                        .onChange(of: notificationConfig.repaymentRemindersEnabled) { _, newValue in
+                            Task { await applyNotificationToggle(enabled: newValue) }
+                        }
+                    if notificationConfig.repaymentRemindersEnabled {
+                        Picker("提前", selection: $notificationConfig.leadDays) {
+                            Text("当天").tag(0)
+                            Text("1 天").tag(1)
+                            Text("2 天").tag(2)
+                            Text("3 天").tag(3)
+                        }
+                        .onChange(of: notificationConfig.leadDays) { _, _ in
+                            Task { await reschedule() }
+                        }
+                    }
+                } header: {
+                    Text("提醒")
+                } footer: {
+                    Text(notificationFooter)
+                }
 
                 Section("识别") {
                     NavigationLink {
@@ -178,6 +202,46 @@ struct SettingsView: View {
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+    }
+
+    // MARK: - Notifications
+
+    private var notificationFooter: String {
+        if notificationDenied {
+            return "已被系统拒绝。请前往「设置 → 通知 → 现金流」手动开启。"
+        }
+        if notificationConfig.repaymentRemindersEnabled {
+            let dayLabel = notificationConfig.leadDays == 0 ? "当天" : "提前 \(notificationConfig.leadDays) 天"
+            return "\(dayLabel)上午 9 点本地提醒，下一期到期前自动通知。"
+        }
+        return "开启后会在还款到期前自动提醒，本地通知不联网。"
+    }
+
+    private func applyNotificationToggle(enabled: Bool) async {
+        if enabled {
+            let granted = await NotificationService.requestAuthorization()
+            if !granted {
+                notificationDenied = true
+                notificationConfig.repaymentRemindersEnabled = false
+                feedback = Feedback(
+                    title: "通知权限被拒",
+                    message: "前往「设置 → 通知 → 现金流」开启通知权限后再试。"
+                )
+                return
+            }
+            notificationDenied = false
+            await reschedule()
+        } else {
+            await NotificationService.cancelAll()
+        }
+    }
+
+    private func reschedule() async {
+        let repayments = (try? modelContext.fetch(FetchDescriptor<Repayment>())) ?? []
+        await NotificationService.rescheduleAll(
+            repayments: repayments,
+            leadDays: notificationConfig.leadDays
+        )
     }
 
     private func exportJson() {
